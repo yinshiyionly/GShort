@@ -8,6 +8,10 @@ import (
 	"utils"
 )
 
+type URL struct {
+	URL string `form:"URL" binding:"required"`
+}
+
 func main() {
 	//r := gin.Default()
 	//// test for ping
@@ -34,7 +38,7 @@ func main() {
 	//defer conn.DB.Close()
 
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     "101.42.137.30:6379",
+		Addr:     "127.0.0.1:6379",
 		Password: "GTO4mjZQXZkWYgspMWHHgla0Lf5yNew8zlgRyq", // 密码
 		DB:       0,                                        // 数据库
 		PoolSize: 20,                                       // 连接池大小
@@ -59,11 +63,18 @@ func main() {
 	// test for ping
 	r.GET("ping", func(c *gin.Context) {
 		c.JSON(200, gin.H{
-			"message": "ping",
+			"message": "pong",
 		})
 	})
 	// 创建短链接
 	r.POST("c", func(c *gin.Context) {
+		var b URL
+		if err := c.ShouldBind(&b); err != nil {
+			c.JSON(200, gin.H {
+				"message":"URL required!",
+			})
+			return
+		}
 		URL := c.PostForm("URL")
 		cacheURL := utils.HashShortURL(URL)
 		_, err := rdb.Get(cacheURL).Result()
