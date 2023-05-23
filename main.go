@@ -70,8 +70,8 @@ func main() {
 	r.POST("c", func(c *gin.Context) {
 		var b URL
 		if err := c.ShouldBind(&b); err != nil {
-			c.JSON(200, gin.H {
-				"message":"URL required!",
+			c.JSON(200, gin.H{
+				"message": "URL required!",
 			})
 			return
 		}
@@ -114,5 +114,5 @@ func main() {
 		c.Redirect(http.StatusMovedPermanently, originURL)
 	})
 
-	r.Run()
+	r.Run(":8085")
 }
