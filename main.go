@@ -1,11 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis"
+	"gshort/services"
 	"net/http"
 	"time"
-	"utils"
 )
 
 type URL struct {
@@ -13,59 +14,16 @@ type URL struct {
 }
 
 func main() {
-	//r := gin.Default()
-	//// test for ping
-	//r.GET("ping", func(c *gin.Context) {
-	//	c.JSON(200, gin.H{
-	//		"message": "pong",
-	//	})
-	//})
-	//r.POST("short", func(c *gin.Context) {
-	//	c.JSON(200, gin.H{
-	//		"message": "success",
-	//		"data":    "https://t.local",
-	//	})
-	//})
-	//conn := RedisSingleObj{
-	//	"101.42.137.30",
-	//	6379,
-	//	"",
-	//}
-	//err := conn.InitSingleRedis()
-	//if err != nil {
-	//	panic(err)
-	//}
-	//defer conn.DB.Close()
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     "127.0.0.1:6379",
-		Password: "GTO4mjZQXZkWYgspMWHHgla0Lf5yNew8zlgRyq", // 密码
-		DB:       0,                                        // 数据库
-		PoolSize: 20,                                       // 连接池大小
-	})
-	// test connect
-	//res, err := rdb.Ping().Result()
-	//if err != nil {
-	//	fmt.Printf("Content Failed! err: %v\n", err)
-	//} else {
-	//	fmt.Printf("Connect Successful! Ping => %v\n", res)
-	//}
-	//err := rdb.Set("a", "111", 0).Err()
-	//if err != nil {
-	//	panic(err)
-	//}
-	//res, err := rdb.Get("a").Result()
-	//if err != nil {
-	//	panic(err)
-	//}
+	redisClient, _ := services.InitRedis()
+	// 注册退出信号处理函数
+	services.SetupGracefulShutdown(redisClient)
+	// 当不再需要使用 Redis 客户端时，关闭连接
+	defer redisClient.Close()
+	fmt.Println(services.FindOriginURL("baidu.com"))
+	panic(11)
 
 	r := gin.Default()
-	// test for ping
-	r.GET("ping", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"message": "pong",
-		})
-	})
+
 	// 创建短链接
 	r.POST("c", func(c *gin.Context) {
 		var b URL
@@ -76,11 +34,12 @@ func main() {
 			return
 		}
 		URL := c.PostForm("URL")
-		cacheURL := utils.HashShortURL(URL)
-		_, err := rdb.Get(cacheURL).Result()
+		// mongo 中查询
+		cacheURL := services.HashShortURL(URL)
+		_, err := redisClient.Get(cacheURL).Result()
 		if err == redis.Nil {
-			//err := rdb.Set(URL, cacheURL, 86400*time.Second).Err()
-			err := rdb.Set(cacheURL, URL, 86400*time.Second).Err()
+			//err := redisClient.Set(URL, cacheURL, 86400*time.Second).Err()
+			err := redisClient.Set(cacheURL, URL, 86400*time.Second).Err()
 			if err != nil {
 				panic(err)
 			}
@@ -99,7 +58,7 @@ func main() {
 	// 短地址跳转
 	r.GET("s/:HASH", func(c *gin.Context) {
 		HASH := c.Param("HASH")
-		originURL, err := rdb.Get(HASH).Result()
+		originURL, err := redisClient.Get(HASH).Result()
 		if err == redis.Nil {
 			c.JSON(404, gin.H{
 				"message": "error",
