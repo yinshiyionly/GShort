@@ -1,12 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"github.com/gin-gonic/gin"
-	"github.com/go-redis/redis"
 	"gshort/services"
 	"net/http"
-	"time"
+	"net/url"
 )
 
 type URL struct {
@@ -19,11 +17,7 @@ func main() {
 	services.SetupGracefulShutdown(redisClient)
 	// 当不再需要使用 Redis 客户端时，关闭连接
 	defer redisClient.Close()
-	fmt.Println(services.FindOriginURL("baidu.com"))
-	panic(11)
-
 	r := gin.Default()
-
 	// 创建短链接
 	r.POST("c", func(c *gin.Context) {
 		var b URL
@@ -33,45 +27,43 @@ func main() {
 			})
 			return
 		}
-		URL := c.PostForm("URL")
+		parseURL, err := url.Parse(b.URL)
+		if err != nil {
+			c.JSON(200, gin.H{
+				"message": "Invalid URL",
+			})
+			return
+		}
+		if parseURL.Scheme != "http" && parseURL.Scheme != "https" {
+			c.JSON(200, gin.H{
+				"message": "Invalid Protocol",
+			})
+			return
+		}
 		// mongo 中查询
-		cacheURL := services.HashShortURL(URL)
-		_, err := redisClient.Get(cacheURL).Result()
-		if err == redis.Nil {
-			//err := redisClient.Set(URL, cacheURL, 86400*time.Second).Err()
-			err := redisClient.Set(cacheURL, URL, 86400*time.Second).Err()
-			if err != nil {
-				panic(err)
-			}
-		} else if err != nil {
-			panic(err)
+		exists, code := services.FindOriginURL(b.URL)
+		if !exists {
+			code = services.HashShortURL(b.URL)
+		    // 插入 mongo
+		    params := services.CodeURLItem{Code: code, URL: b.URL}
+		    services.InsertToMongo(params)
 		}
 		c.JSON(200, gin.H{
-			"message": cacheURL,
+			"code": code,
 		})
 	})
-	//r.GET("redis", func(c *gin.Context) {
-	//	c.JSON(200, gin.H{
-	//		"message": res,
-	//	})
-	//})
 	// 短地址跳转
 	r.GET("s/:HASH", func(c *gin.Context) {
 		HASH := c.Param("HASH")
-		originURL, err := redisClient.Get(HASH).Result()
-		if err == redis.Nil {
+		exists, originURL := services.FindOriginURLByCode(HASH)
+		if exists {
+			c.Redirect(http.StatusMovedPermanently, originURL)
+		} else {
 			c.JSON(404, gin.H{
 				"message": "error",
-				"data":    originURL,
-			})
-		} else if err != nil {
-			c.JSON(404, gin.H{
-				"message": "error1",
 				"data":    "Not Found",
 			})
 		}
-		c.Redirect(http.StatusMovedPermanently, originURL)
 	})
-
-	r.Run(":8085")
+	r.Run("127.0.0.1:8085")
 }
