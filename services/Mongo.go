@@ -2,25 +2,28 @@ package services
 
 import (
 	"context"
+	"fmt"
+	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"gshort/internal/api/model"
 	"log"
+	"time"
 )
 
-type CodeURLItem struct {
-	Code string
-	URL  string
-}
+var database string
 
 func FindOriginURL(originURL string) (bool, string) {
+
 	client, err := initMongo()
 	if err != nil {
 		log.Fatal(err)
 	}
 	// 关闭连接
 	defer client.Disconnect(context.TODO())
-	collection := client.Database("gshort").Collection("code_url_map")
+	collection := client.Database(database).Collection("code_url_map")
 	filter := bson.D{{"url", originURL}}
 	res := collection.FindOne(context.TODO(), filter)
 	if err := res.Err(); err != nil {
@@ -39,13 +42,14 @@ func FindOriginURL(originURL string) (bool, string) {
 }
 
 func FindOriginURLByCode(code string) (bool, string) {
+
 	client, err := initMongo()
 	if err != nil {
 		log.Fatal(err)
 	}
 	// 关闭连接
 	defer client.Disconnect(context.TODO())
-	collection := client.Database("gshort").Collection("code_url_map")
+	collection := client.Database(database).Collection("code_url_map")
 	filter := bson.D{{"code", code}}
 	res := collection.FindOne(context.TODO(), filter)
 	if err := res.Err(); err != nil {
@@ -63,28 +67,49 @@ func FindOriginURLByCode(code string) (bool, string) {
 	return true, result.OriginURL
 }
 
-func InsertToMongo(params CodeURLItem) bool {
+func InsertToMongo(params model.CodeUrlMap) interface{} {
 	client, err := initMongo()
 	if err != nil {
 		log.Fatal(err)
 	}
+	database = viper.GetString("mongo.database")
 	// 关闭连接
-	defer client.Disconnect(context.TODO())
-	collection := client.Database("gshort").Collection("code_url_map")
-	_, err = collection.InsertOne(context.TODO(), params)
+	fmt.Println(database)
+	//defer client.Disconnect(context.TODO())
+	collection := client.Database(database).Collection(model.TableName)
+	objectId := primitive.NewObjectIDFromTimestamp(time.Now()).Hex()
+	params.Code = GenerateTinyUrlByPrimaryKey(objectId)
+	objectID, err := primitive.ObjectIDFromHex(objectId)
 	if err != nil {
-		panic("Insert Item Failed!")
+		log.Fatalf("Transformer objectID failed: %v", err)
 	}
-	return true
+	fmt.Println(objectID)
+	// 设置保存的数据
+	insertParams := bson.D{
+		{Key: "_id", Value: objectId},
+		{Key: "code", Value: params.Code},
+		{Key: "url", Value: params.Url},
+	}
+	//fmt.Println(params,
+	//    primitive.NewObjectIDFromTimestamp(time.Now()).Hex(),
+	//)
+	result, err := collection.InsertOne(context.TODO(), insertParams)
+	if err != nil {
+		log.Fatalf("Insert Item Failed: %v", err)
+	}
+	return result
 }
 
 func initMongo() (*mongo.Client, error) {
+	// 配置文件读取 user password
+	user, password := viper.GetString("mongo.user"), viper.GetString("mongo.password")
 	credential := options.Credential{
-		Username: "root",
-		Password: "example",
+		Username: user,
+		Password: password,
 	}
 	// 设置客户端连接配置
-	clientOptions := options.Client().ApplyURI("mongodb://127.0.0.1:27017").SetAuth(credential)
+	host, port := viper.GetString("mongo.host"), viper.GetString("mongo.port")
+	clientOptions := options.Client().ApplyURI("mongodb://" + host + ":" + port).SetAuth(credential)
 	// 连接到 MongoDB
 	client, err := mongo.Connect(context.TODO(), clientOptions)
 	if err != nil {
@@ -97,3 +122,7 @@ func initMongo() (*mongo.Client, error) {
 
 	return client, nil
 }
+
+//func init() {
+//	database = viper.GetString("mongo.database")
+//}
